@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PERFORT ALMOX — Controle de Estoque & CQ Concretagem | PERFORT ENGENHARIA</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              navy: '#0D1F2D',
+              navyLight: '#1E3A4D',
+              gold: '#C9A358',
+              goldDark: '#b8924a',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            heading: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- React 18 & Babel CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Chart.js, XLSX & jsPDF CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, .font-heading { font-family: 'Outfit', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 9999px; }
+    .dark ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.6); }
+    ::-webkit-scrollbar-thumb:hover { background: #C9A358; }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-full antialiased selection:bg-[#C9A358] selection:text-[#0D1F2D]">
+  <div id="root" class="h-full"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- DATA MODELS & DEFAULTS ---
+    const MASTER_USER = {
+      username: 'Diegokb',
+      password: '1307',
+      role: 'Administrador',
+      email: 'admin@perfort.com.br',
+      permissoes: [
+        'dashboard', 'cadastro', 'entradas', 'saidas', 'inventario',
+        'relatorio', 'alertas', 'config', 'usuarios', 'backup',
+        'obras', 'cq-concretagem', 'assistente-ia', 'editar',
+        'excluir', 'exportar', 'importar', 'sync'
+      ]
+    };
+
+    const DEFAULT_USERS = [
+      MASTER_USER,
+      {
+        username: 'almoxarife.obra1',
+        password: '123',
+        role: 'Operador',
+        email: 'almoxarife1@perfort.com.br',
+        permissoes: ['dashboard', 'entradas', 'saidas', 'inventario', 'relatorio', 'alertas', 'cq-concretagem', 'exportar']
+      },
+      {
+        username: 'engenheiro.obra1',
+        password: '123',
+        role: 'Supervisor',
+        email: 'engenharia1@perfort.com.br',
+        permissoes: ['dashboard', 'cadastro', 'entradas', 'saidas', 'inventario', 'relatorio', 'alertas', 'obras', 'cq-concretagem', 'editar', 'exportar']
+      }
+    ];
+
+    const FAMILIAS = [
+      "Armadura",
+      "Combustíveis, Óleos e Lubrificantes",
+      "Concretos",
+      "Condicionador de Ar",
+      "Diversos",
+      "Equipamentos de Proteção Coletiva (EPC's)",
+      "Equipamentos de Proteção Individual (EPI's)",
+      "Expediente",
+      "Fechaduras e Ferragens",
+      "Ferramentas",
+      "Interruptores, Tomadas e Conjuntos",
+      "Limpeza",
+      "Locação de Máquinas, Equipamentos e Ferramentas (Terceiros)",
+      "Madeira Serrada Para Uso Geral",
+      "Materiais Aplicados",
+      "Materiais Elétricos Diversos",
+      "Materiais de Higiene",
+      "Materiais de Limpeza",
+      "Peças Automotivas Para Manutenção de Imobilizado",
+      "Pintura",
+      "Suprimentos cozinha"
+    ];
+
+    const DEFAULT_OBRAS = [
+      {
+        id: 1,
+        nome: 'Icon Residence - Centro de Custo 36',
+        endereco: 'Av. Principal, 1500 - Centro',
+        cliente: 'Icon Empreendimentos',
+        responsavel: 'Eng. Roberto Silva',
+        inicio: '2025-12-01',
+        fim: '2026-08-30',
+        status: 'Ativa',
+        descricao: 'Obra residencial multifamiliar de 20 pavimentos',
+        estoque: 'Eng. Roberto',
+        engenharia: 'Carlos Eduardo',
+        almoxarife: 'Marcos Souza'
+      },
+      {
+        id: 2,
+        nome: 'Edifício Horizon Tower',
+        endereco: 'Rua das Palmeiras, 450 - Jardins',
+        cliente: 'Horizon Imóveis',
+        responsavel: 'Eng. Patricia Lima',
+        inicio: '2026-01-15',
+        fim: '2027-03-31',
+        status: 'Ativa',
+        descricao: 'Torre comercial corporativa',
+        estoque: 'Patricia Lima',
+        engenharia: 'Lucas Mendes',
+        almoxarife: 'João Pedro'
+      }
+    ];
+
+    const DEFAULT_INSUMOS_DEMO = [
+      {
+        codigo: 'ARM001',
+        nome: 'Vergalhão CA-50 10mm (3/8")',
+        familia: 'Armadura',
+        unidade: 'KG',
+        detalhe: 'Barra dobrada de 12 metros CA-50',
+        quantidade: 500,
+        estoque_min: 200,
+        localizacao: 'Patio A',
+        entradas_total: 1200,
+        saidas_total: 850,
+        preco_medio: 6.80,
+        custo_medio: 6.50,
+        fornecedor: 'Gerdau Aços'
+      },
+      {
+        codigo: 'ARM002',
+        nome: 'Vergalhão CA-50 12.5mm (1/2")',
+        familia: 'Armadura',
+        unidade: 'KG',
+        detalhe: 'Barra reta de 12 metros CA-50',
+        quantidade: 300,
+        estoque_min: 250,
+        localizacao: 'Patio A',
+        entradas_total: 800,
+        saidas_total: 920,
+        preco_medio: 6.90,
+        custo_medio: 6.70,
+        fornecedor: 'ArcelorMittal'
+      },
+      {
+        codigo: 'CNC001',
+        nome: 'Cimento CP II-F 32 Saco 50kg',
+        familia: 'Concretos',
+        unidade: 'SC',
+        detalhe: 'Cimento Portland composto com fúler',
+        quantidade: 100,
+        estoque_min: 150,
+        localizacao: 'Almox do Cimento',
+        entradas_total: 400,
+        saidas_total: 480,
+        preco_medio: 38.50,
+        custo_medio: 37.00,
+        fornecedor: 'Votorantim Cimentos'
+      },
+      {
+        codigo: 'EPI001',
+        nome: 'Capacete de Segurança Classe B com Carneira',
+        familia: "Equipamentos de Proteção Individual (EPI's)",
+        unidade: 'UN',
+        detalhe: 'Capacete branco com jugular CA 31469',
+        quantidade: 40,
+        estoque_min: 15,
+        localizacao: 'Almox Central - Prateleira B1',
+        entradas_total: 60,
+        saidas_total: 45,
+        preco_medio: 22.00,
+        custo_medio: 21.50,
+        fornecedor: 'Promat EPIs'
+      },
+      {
+        codigo: 'EPI002',
+        nome: 'Luva de Vaqueta Cano Curto M',
+        familia: "Equipamentos de Proteção Individual (EPI's)",
+        unidade: 'PAR',
+        detalhe: 'Couro vaqueta para armadores e carpinteiros',
+        quantidade: 10,
+        estoque_min: 25,
+        localizacao: 'Almox Central - Prateleira B2',
+        entradas_total: 50,
+        saidas_total: 52,
+        preco_medio: 18.50,
+        custo_medio: 18.00,
+        fornecedor: 'Promat EPIs'
+      },
+      {
+        codigo: 'MAD001',
+        nome: 'Tábua de Pinho 1" x 12" (2.5 x 30cm) 3m',
+        familia: 'Madeira Serrada Para Uso Geral',
+        unidade: 'M',
+        detalhe: 'Madeira para fôrmas e caixaria',
+        quantidade: 200,
+        estoque_min: 80,
+        localizacao: 'Depósito Madeiras',
+        entradas_total: 500,
+        saidas_total: 380,
+        preco_medio: 14.20,
+        custo_medio: 13.80,
+        fornecedor: 'Madeireira União'
+      },
+      {
+        codigo: 'FER001',
+        nome: 'Disco de Corte Diamantado 4.5" Segmentado',
+        familia: 'Ferramentas',
+        unidade: 'UN',
+        detalhe: 'Para esmerilhadeira, corte de concreto e alvenaria',
+        quantidade: 30,
+        estoque_min: 10,
+        localizacao: 'Ferramentaria - Armário 2',
+        entradas_total: 80,
+        saidas_total: 65,
+        preco_medio: 28.00,
+        custo_medio: 26.50,
+        fornecedor: 'Makita Brasil'
+      }
+    ];
+
+    // --- STORAGE & HELPERS ---
+    function getActiveObra() {
+      try {
+        const raw = localStorage.getItem('perfort_almox_obra_atual');
+        return raw ? JSON.parse(raw) : DEFAULT_OBRAS[0];
+      } catch (e) {
+        return DEFAULT_OBRAS[0];
+      }
+    }
+
+    function setActiveObra(obra) {
+      if (obra) {
+        localStorage.setItem('perfort_almox_obra_atual', JSON.stringify(obra));
+      } else {
+        localStorage.removeItem('perfort_almox_obra_atual');
+      }
+    }
+
+    function getTenantPrefix() {
+      const obra = getActiveObra();
+      return obra && obra.id ? `tenant_${obra.id}_` : 'tenant_none_';
+    }
+
+    function tget(key, defaultValue) {
+      try {
+        const raw = localStorage.getItem(getTenantPrefix() + key);
+        return raw !== null ? JSON.parse(raw) : defaultValue;
+      } catch (e) {
+        return defaultValue;
+      }
+    }
+
+    function tset(key, value) {
+      try {
+        localStorage.setItem(getTenantPrefix() + key, JSON.stringify(value));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function getSaldo(item) {
+      const init = item.quantidade || 0;
+      const ent = item.entradas_total || 0;
+      const sai = item.saidas_total || 0;
+      return init + ent - sai;
+    }
+
+    function getStatus(item) {
+      const saldo = getSaldo(item);
+      const min = item.estoque_min || 0;
+      if (saldo <= 0) return 'CRÍTICO';
+      if (saldo <= min) return 'BAIXO';
+      return 'OK';
+    }
+
+    function formatCurrency(val) {
+      if (val == null || isNaN(val)) return 'R$ 0,00';
+      return 'R$ ' + Number(val).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    function formatNumber(val, decimals = 2) {
+      if (val == null || isNaN(val)) return '0,00';
+      return Number(val).toFixed(decimals).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    function exportToExcel(filename, sheetName, data) {
+      if (!data || data.length === 0) {
+        alert('Nenhum dado para exportar.');
+        return;
+      }
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }
+
+    function auditLog(action, detail) {
+      try {
+        const rawSess = localStorage.getItem('perfort_almox_session');
+        const session = rawSess ? JSON.parse(rawSess) : null;
+        const obra = getActiveObra();
+        const entry = {
+          timestamp: new Date().toLocaleString('pt-BR'),
+          username: session ? session.username : 'desconhecido',
+          action,
+          detail,
+          obra: obra ? obra.nome : 'Geral'
+        };
+        const current = JSON.parse(localStorage.getItem('perfort_almox_audit') || '[]');
+        current.unshift(entry);
+        if (current.length > 300) current.length = 300;
+        localStorage.setItem('perfort_almox_audit', JSON.stringify(current));
+      } catch (e) {}
+    }
+
+    // PDF Export for Movements
+    function exportReportPDF(movimentos, periodo) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const activeObra = getActiveObra();
+
+      doc.setFillColor(201, 163, 88);
+      doc.rect(0, 0, doc.internal.pageSize.width, 6, 'F');
+
+      doc.setFillColor(13, 31, 45);
+      doc.rect(0, 6, doc.internal.pageSize.width, 22, 'F');
+
+      doc.setFontSize(16);
+      doc.setTextColor(201, 163, 88);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PERFORT ENGENHARIA', 14, 17);
+
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 200);
+      doc.setFont('helvetica', 'normal');
+      doc.text('GESTÃO • FISCALIZAÇÃO • GERENCIAMENTO DE OBRAS', 14, 23);
+
+      doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
+      doc.text('PERFORT ALMOX — Relatório de Movimentações', doc.internal.pageSize.width - 14, 17, { align: 'right' });
+
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 200);
+      doc.text(`Obra: ${activeObra ? activeObra.nome : 'Geral'} | Emissão: ${new Date().toLocaleString('pt-BR')}`, doc.internal.pageSize.width - 14, 23, { align: 'right' });
+
+      doc.setDrawColor(201, 163, 88);
+      doc.setLineWidth(0.5);
+      doc.line(14, 32, doc.internal.pageSize.width - 14, 32);
+
+      const tableData = movimentos.map(m => [
+        m.data,
+        m.tipo,
+        m.codigo,
+        m.nome,
+        formatNumber(m.qtd),
+        formatCurrency(m.valor_unit),
+        formatCurrency(m.valor_total),
+        m.fornecedorOuDestino || '-'
+      ]);
+
+      doc.autoTable({
+        startY: 38,
+        head: [['Data', 'Tipo', 'Código', 'Nome do Insumo', 'Qtd', 'Unitário', 'Total', 'Forn. / Destino']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [13, 31, 45], textColor: [201, 163, 88], fontSize: 9, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 8, textColor: [30, 41, 59] },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 }
+      });
+
+      doc.save(`Relatorio_Movimentacoes_${new Date().toISOString().slice(0, 10)}.pdf`);
+    }
+
+    // PDF Export for CQ Concretagem
+    function exportCQConcretagemPDF(cqList) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const activeObra = getActiveObra();
+
+      doc.setFillColor(201, 163, 88);
+      doc.rect(0, 0, doc.internal.pageSize.width, 6, 'F');
+
+      doc.setFillColor(13, 31, 45);
+      doc.rect(0, 6, doc.internal.pageSize.width, 22, 'F');
+
+      doc.setFontSize(16);
+      doc.setTextColor(201, 163, 88);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PERFORT ENGENHARIA', 14, 17);
+
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 200);
+      doc.setFont('helvetica', 'normal');
+      doc.text('CONTROLE DE QUALIDADE — CONCRETAGEM', 14, 23);
+
+      doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`Obra: ${activeObra ? activeObra.nome : 'Icon Residence - CC 36'}`, doc.internal.pageSize.width - 14, 17, { align: 'right' });
+
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 200);
+      doc.text(`Relatório gerado em: ${new Date().toLocaleString('pt-BR')}`, doc.internal.pageSize.width - 14, 23, { align: 'right' });
+
+      doc.setDrawColor(201, 163, 88);
+      doc.setLineWidth(0.5);
+      doc.line(14, 32, doc.internal.pageSize.width - 14, 32);
+
+      const tableData = cqList.map(c => [
+        c.serie,
+        c.data,
+        c.fase || '-',
+        c.torre || '-',
+        c.local || '-',
+        c.fck ? `${c.fck} MPa` : '-',
+        c.slump ? `${c.slump} mm` : '-',
+        formatNumber(c.qtd, 2),
+        c.nf || '-',
+        c.concreteira || '-',
+        c.responsavel || '-'
+      ]);
+
+      doc.autoTable({
+        startY: 38,
+        head: [['Série CP', 'Data', 'Fase/Local', 'Torre', 'Espec. Local', 'FCK', 'Slump', 'Vol (m³)', 'Nº NF', 'Concreteira', 'Resp.']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [13, 31, 45], textColor: [201, 163, 88], fontSize: 8, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 7.5, textColor: [30, 41, 59] },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 }
+      });
+
+      doc.save(`CQ_Concretagem_${new Date().toISOString().slice(0, 10)}.pdf`);
+    }
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [session, setSession] = useState(() => {
+        const raw = localStorage.getItem('perfort_almox_session');
+        return raw ? JSON.parse(raw) : { username: 'Diegokb', role: 'Administrador', permissoes: MASTER_USER.permissoes };
+      });
+
+      const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('perfort_dark') === 'true');
+      const [activePage, setActivePage] = useState('dashboard');
+      const [activeObra, setActiveObraState] = useState(() => getActiveObra());
+      const [obras, setObras] = useState(() => {
+        const raw = localStorage.getItem('perfort_almox_obras');
+        return raw ? JSON.parse(raw) : DEFAULT_OBRAS;
+      });
+
+      // Tenant Data
+      const [items, setItems] = useState([]);
+      const [entradas, setEntradas] = useState([]);
+      const [saidas, setSaidas] = useState([]);
+      const [cqList, setCqList] = useState([]);
+      const [preselectedCodigo, setPreselectedCodigo] = useState('');
+
+      const reloadTenantData = () => {
+        const fallback = { items: DEFAULT_INSUMOS_DEMO, entradas: [], saidas: [], nextEntradaId: 1, nextSaidaId: 1 };
+        const data = tget('data', fallback);
+        setItems(data.items || []);
+        setEntradas(data.entradas || []);
+        setSaidas(data.saidas || []);
+        setCqList(tget('cq_concretagem', []));
+      };
+
+      useEffect(() => {
+        reloadTenantData();
+      }, [activeObra?.id]);
+
+      useEffect(() => {
+        if (isDarkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        localStorage.setItem('perfort_dark', isDarkMode);
+      }, [isDarkMode]);
+
+      const handleSelectObra = (o) => {
+        setActiveObra(o);
+        setActiveObraState(o);
+        auditLog('TROCA_OBRA', `Obra alterada para ${o ? o.nome : 'Todas'}`);
+      };
+
+      const handleLoginSuccess = (uname, role) => {
+        const sess = { username: uname, role, permissoes: MASTER_USER.permissoes };
+        localStorage.setItem('perfort_almox_session', JSON.stringify(sess));
+        setSession(sess);
+        auditLog('LOGIN', `Usuário ${uname} logou`);
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem('perfort_almox_session');
+        setSession(null);
+      };
+
+      if (!session) {
+        return <LoginOverlay onLoginSuccess={handleLoginSuccess} />;
+      }
+
+      return (
+        <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans">
+          {/* Header */}
+          <header className="bg-[#0D1F2D] text-white px-4 py-3 sticky top-0 z-40 shadow-md border-b border-[#C9A358]/30">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+                <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActivePage('dashboard')}>
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#C9A358] to-[#b8924a] flex items-center justify-center font-black text-[#0D1F2D] text-xl shadow">
+                    P
+                  </div>
+                  <div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-extrabold text-base tracking-wider text-[#C9A358]">PERFORT</span>
+                      <span className="text-xs font-light tracking-widest text-slate-300">ENGENHARIA</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">Gestão de Almoxarifado e CQ Concretagem</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 md:hidden">
+                  <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-slate-800 text-[#C9A358]">
+                    {isDarkMode ? '☀️' : '🌙'}
+                  </button>
+                  <button onClick={handleLogout} className="p-2 rounded-lg bg-red-950 text-red-300">🚪</button>
+                </div>
+              </div>
+
+              {/* Obra Selector */}
+              <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
+                <span className="text-[#C9A358] text-sm">🏗️</span>
+                <select
+                  value={activeObra?.id || ''}
+                  onChange={e => {
+                    const found = obras.find(o => o.id === Number(e.target.value));
+                    handleSelectObra(found || null);
+                  }}
+                  className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer max-w-[220px] truncate"
+                >
+                  {obras.map(o => (
+                    <option key={o.id} value={o.id} className="bg-[#0D1F2D] text-white">{o.nome}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Controls */}
+              <div className="hidden md:flex items-center gap-3 text-xs">
+                <div className="px-2.5 py-1 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800 font-semibold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online
+                </div>
+                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-xl bg-slate-800 text-[#C9A358] border border-slate-700">
+                  {isDarkMode ? '☀️ Claro' : '🌙 Escuro'}
+                </button>
+                <div className="text-right border-l border-slate-700 pl-3">
+                  <div className="font-bold text-[#C9A358]">{session.username}</div>
+                  <div className="text-[10px] text-slate-400">{session.role}</div>
+                </div>
+                <button onClick={handleLogout} className="p-2 rounded-xl bg-red-950/80 text-red-300 border border-red-800" title="Sair">
+                  Sair 🚪
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Layout */}
+          <div className="flex-1 flex max-w-7xl w-full mx-auto overflow-hidden">
+            {/* Sidebar */}
+            <aside className="w-16 md:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-3 space-y-1 shrink-0">
+              {[
+                { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+                { id: 'cadastro', label: 'Insumos', icon: '📦' },
+                { id: 'entradas', label: 'Entradas', icon: '📥' },
+                { id: 'saidas', label: 'Saídas', icon: '📤' },
+                { id: 'inventario', label: 'Inventário', icon: '📋' },
+                { id: 'alertas', label: 'Alertas', icon: '🔔' },
+                { id: 'cq-concretagem', label: 'CQ Concretagem', icon: '🧪' },
+                { id: 'relatorio', label: 'Relatórios', icon: '📈' },
+                { id: 'obras', label: 'Obras', icon: '🏢' },
+                { id: 'backup', label: 'Backup & Audit', icon: '💾' },
+                { id: 'assistente-ia', label: 'Assistente IA', icon: '🤖' }
+              ].map(nav => (
+                <button
+                  key={nav.id}
+                  onClick={() => setActivePage(nav.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    activePage === nav.id
+                      ? 'bg-[#0D1F2D] text-[#C9A358] dark:bg-slate-800 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="text-base">{nav.icon}</span>
+                  <span className="hidden md:inline truncate">{nav.label}</span>
+                </button>
+              ))}
+            </aside>
+
+            {/* View Area */}
+            <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+              {activePage === 'dashboard' && (
+                <DashboardView
+                  items={items}
+                  entradas={entradas}
+                  saidas={saidas}
+                  onNavigate={setActivePage}
+                  onIrParaEntrada={(cod) => { setPreselectedCodigo(cod); setActivePage('entradas'); }}
+                />
+              )}
+
+              {activePage === 'cadastro' && (
+                <CadastroView items={items} onUpdate={reloadTenantData} />
+              )}
+
+              {activePage === 'entradas' && (
+                <EntradasView items={items} entradas={entradas} preselectedCodigo={preselectedCodigo} onUpdate={reloadTenantData} />
+              )}
+
+              {activePage === 'saidas' && (
+                <SaidasView items={items} saidas={saidas} onUpdate={reloadTenantData} />
+              )}
+
+              {activePage === 'inventario' && (
+                <InventarioView items={items} onUpdate={reloadTenantData} />
+              )}
+
+              {activePage === 'alertas' && (
+                <AlertasView items={items} onIrParaEntrada={(cod) => { setPreselectedCodigo(cod); setActivePage('entradas'); }} />
+              )}
+
+              {activePage === 'cq-concretagem' && (
+                <CQConcretagemView cqList={cqList} onUpdate={reloadTenantData} />
+              )}
+
+              {activePage === 'relatorio' && (
+                <RelatoriosView items={items} entradas={entradas} saidas={saidas} />
+              )}
+
+              {activePage === 'obras' && (
+                <ObrasView obras={obras} activeObra={activeObra} onSelectObra={handleSelectObra} onUpdate={() => {
+                  const raw = localStorage.getItem('perfort_almox_obras');
+                  setObras(raw ? JSON.parse(raw) : DEFAULT_OBRAS);
+                }} />
+              )}
+
+              {activePage === 'backup' && (
+                <BackupView onRestore={reloadTenantData} />
+              )}
+
+              {activePage === 'assistente-ia' && (
+                <AssistenteIAView items={items} entradas={entradas} saidas={saidas} />
+              )}
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    // --- SUB COMPONENTS ---
+
+    function LoginOverlay({ onLoginSuccess }) {
+      const [u, setU] = useState('Diegokb');
+      const [p, setP] = useState('1307');
+      const [err, setErr] = useState('');
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        if (u === 'Diegokb' && p === '1307') {
+          onLoginSuccess(u, 'Administrador');
+        } else {
+          setErr('Usuário ou senha incorretos.');
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 z-50 bg-[#0D1F2D] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl max-w-md w-full shadow-2xl border border-slate-800 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#C9A358] to-[#b8924a] flex items-center justify-center font-black text-[#0D1F2D] text-3xl mx-auto mb-3">
+              P
+            </div>
+            <h2 className="text-xl font-extrabold text-slate-800 dark:text-white">PERFORT ALMOX</h2>
+            <p className="text-xs text-slate-500 uppercase tracking-widest mt-1 mb-6">Controle de Estoque & CQ Concretagem</p>
+
+            <form onSubmit={handleLogin} className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">Usuário</label>
+                <input type="text" value={u} onChange={e=>setU(e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">Senha</label>
+                <input type="password" value={p} onChange={e=>setP(e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm" />
+              </div>
+
+              {err && <div className="text-xs text-red-500 font-bold">{err}</div>}
+
+              <button type="submit" className="w-full py-3 bg-[#C9A358] text-[#0D1F2D] font-extrabold rounded-xl text-sm hover:brightness-105">
+                ENTRAR NO SISTEMA
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    function DashboardView({ items, entradas, saidas, onNavigate, onIrParaEntrada }) {
+      const totalVal = items.reduce((s, i) => s + getSaldo(i) * (i.preco_medio || 0), 0);
+      const okCount = items.filter(i => getStatus(i) === 'OK').length;
+      const baixoCount = items.filter(i => getStatus(i) === 'BAIXO').length;
+      const criticoCount = items.filter(i => getStatus(i) === 'CRÍTICO').length;
+      const criticos = items.filter(i => getStatus(i) !== 'OK');
+
+      const chartRef = useRef(null);
+      const chartInstance = useRef(null);
+
+      useEffect(() => {
+        if (chartRef.current && window.Chart) {
+          if (chartInstance.current) chartInstance.current.destroy();
+          chartInstance.current = new window.Chart(chartRef.current, {
+            type: 'doughnut',
+            data: {
+              labels: ['OK', 'Baixo', 'Crítico'],
+              datasets: [{
+                data: [okCount, baixoCount, criticoCount],
+                backgroundColor: ['#10B981', '#F59E0B', '#EF4444'],
+                borderWidth: 0
+              }]
+            },
+            options: {
+              maintainAspectRatio: false,
+              plugins: { legend: { position: 'bottom' } }
+            }
+          });
+        }
+      }, [okCount, baixoCount, criticoCount]);
+
+      return (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm border-t-4 border-t-[#0D1F2D]">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Total Insumos</div>
+              <div className="text-2xl font-black text-slate-800 dark:text-white mt-1">{items.length}</div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm border-t-4 border-t-[#C9A358]">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Valor em Estoque</div>
+              <div className="text-xl font-black text-[#C9A358] mt-1">{formatCurrency(totalVal)}</div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm border-t-4 border-t-red-500">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Alertas / Mínimos</div>
+              <div className="text-2xl font-black text-red-500 mt-1">{criticos.length}</div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm border-t-4 border-t-emerald-500">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Entradas Total</div>
+              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{entradas.length}</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-white mb-3">Distribuição de Status</h3>
+              <div className="h-48 relative">
+                <canvas ref={chartRef}></canvas>
+              </div>
+            </div>
+
+            <div className="md:col-span-2 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-white">⚠️ Itens Requerendo Reposição (Estoque Baixo/Crítico)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                    <tr>
+                      <th className="p-2.5">Código</th>
+                      <th className="p-2.5">Nome</th>
+                      <th className="p-2.5 text-right">Saldo</th>
+                      <th className="p-2.5 text-right">Mínimo</th>
+                      <th className="p-2.5 text-center">Status</th>
+                      <th className="p-2.5 text-center">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {criticos.map(i => (
+                      <tr key={i.codigo}>
+                        <td className="p-2.5 font-mono font-bold text-slate-700 dark:text-slate-300">{i.codigo}</td>
+                        <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">{i.nome}</td>
+                        <td className="p-2.5 text-right font-black text-slate-800 dark:text-slate-200">{formatNumber(getSaldo(i))} {i.unidade}</td>
+                        <td className="p-2.5 text-right text-slate-400">{formatNumber(i.estoque_min)}</td>
+                        <td className="p-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${getStatus(i) === 'CRÍTICO' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {getStatus(i)}
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <button onClick={() => onIrParaEntrada(i.codigo)} className="px-2 py-1 bg-[#0D1F2D] text-[#C9A358] font-bold rounded-lg text-[10px]">
+                            + Repor
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function CadastroView({ items, onUpdate }) {
+      const [codigo, setCodigo] = useState('');
+      const [nome, setNome] = useState('');
+      const [familia, setFamilia] = useState(FAMILIAS[0]);
+      const [unidade, setUnidade] = useState('UN');
+      const [estoqueMin, setEstoqueMin] = useState('10');
+      const [precoMedio, setPrecoMedio] = useState('0');
+      const [search, setSearch] = useState('');
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        const data = tget('data', { items: [] });
+        data.items.unshift({
+          codigo,
+          nome,
+          familia,
+          unidade,
+          quantidade: 0,
+          estoque_min: parseFloat(estoqueMin) || 0,
+          preco_medio: parseFloat(precoMedio) || 0
+        });
+        tset('data', data);
+        onUpdate();
+        setCodigo(''); setNome('');
+      };
+
+      const handleDelete = (cod) => {
+        if (confirm(`Excluir item ${cod}?`)) {
+          const data = tget('data', { items: [] });
+          data.items = data.items.filter(i => i.codigo !== cod);
+          tset('data', data);
+          onUpdate();
+        }
+      };
+
+      const filtered = items.filter(i => (i.codigo + ' ' + i.nome).toLowerCase().includes(search.toLowerCase()));
+
+      return (
+        <div className="space-y-6">
+          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">➕ Cadastrar Novo Insumo</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input type="text" placeholder="Código (ex: MAT001)" value={codigo} onChange={e=>setCodigo(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Nome do Material" value={nome} onChange={e=>setNome(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl sm:col-span-2" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <select value={familia} onChange={e=>setFamilia(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
+                {FAMILIAS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <input type="text" placeholder="Unidade (UN, KG, M³)" value={unidade} onChange={e=>setUnidade(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="number" placeholder="Estoque Mínimo" value={estoqueMin} onChange={e=>setEstoqueMin(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <button type="submit" className="px-4 py-2 bg-[#0D1F2D] text-[#C9A358] font-bold rounded-xl text-xs">Salvar Insumo</button>
+          </form>
+
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-white">Catálogo de Insumos ({filtered.length})</h3>
+              <input type="text" placeholder="Buscar insumos..." value={search} onChange={e=>setSearch(e.target.value)} className="p-1.5 text-xs bg-slate-50 dark:bg-slate-800 border rounded-xl w-48" />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                  <tr>
+                    <th className="p-2.5">Código</th>
+                    <th className="p-2.5">Nome</th>
+                    <th className="p-2.5">Família</th>
+                    <th className="p-2.5 text-right">Saldo</th>
+                    <th className="p-2.5 text-center">Status</th>
+                    <th className="p-2.5 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filtered.map(i => (
+                    <tr key={i.codigo}>
+                      <td className="p-2.5 font-mono font-bold">{i.codigo}</td>
+                      <td className="p-2.5 font-bold">{i.nome}</td>
+                      <td className="p-2.5 text-slate-500">{i.familia}</td>
+                      <td className="p-2.5 text-right font-black">{formatNumber(getSaldo(i))} {i.unidade}</td>
+                      <td className="p-2.5 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getStatus(i)==='OK'?'bg-emerald-100 text-emerald-800':'bg-red-100 text-red-800'}`}>
+                          {getStatus(i)}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <button onClick={() => handleDelete(i.codigo)} className="p-1 text-red-500 hover:bg-red-50 rounded-lg">🗑️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function EntradasView({ items, entradas, preselectedCodigo, onUpdate }) {
+      const [codigo, setCodigo] = useState(preselectedCodigo || '');
+      const [qtd, setQtd] = useState('');
+      const [valorUnit, setValorUnit] = useState('');
+      const [fornecedor, setFornecedor] = useState('');
+      const [nf, setNf] = useState('');
+
+      useEffect(() => { if (preselectedCodigo) setCodigo(preselectedCodigo); }, [preselectedCodigo]);
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        const data = tget('data', { items: [], entradas: [], nextEntradaId: 1 });
+        const item = data.items.find(i => i.codigo === codigo);
+        if (!item) return;
+
+        const quantity = parseFloat(qtd) || 0;
+        const price = parseFloat(valorUnit) || 0;
+
+        const newEntrada = {
+          id: data.nextEntradaId || 1,
+          data: new Date().toISOString().slice(0, 10),
+          codigo,
+          nome: item.nome,
+          qtd: quantity,
+          valor_unit: price,
+          valor_total: quantity * price,
+          fornecedor,
+          nf
+        };
+
+        data.nextEntradaId = (data.nextEntradaId || 1) + 1;
+        data.entradas.unshift(newEntrada);
+        item.entradas_total = (item.entradas_total || 0) + quantity;
+        if (price > 0) item.preco_medio = price;
+
+        tset('data', data);
+        onUpdate();
+        setQtd(''); setValorUnit(''); setNf('');
+        auditLog('REGISTRAR_ENTRADA', `Entrada NF ${nf} - ${quantity}x ${codigo}`);
+      };
+
+      return (
+        <div className="space-y-6">
+          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">📥 Registrar Entrada de Material</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <select value={codigo} onChange={e=>setCodigo(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl sm:col-span-2">
+                <option value="">Selecione o Insumo...</option>
+                {items.map(i => <option key={i.codigo} value={i.codigo}>{i.codigo} — {i.nome}</option>)}
+              </select>
+              <input type="number" step="0.01" placeholder="Quantidade" value={qtd} onChange={e=>setQtd(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input type="number" step="0.01" placeholder="Preço Unitário (R$)" value={valorUnit} onChange={e=>setValorUnit(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Fornecedor" value={fornecedor} onChange={e=>setFornecedor(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Nº Nota Fiscal" value={nf} onChange={e=>setNf(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <button type="submit" className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl text-xs">Confirmar Entrada</button>
+          </form>
+
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white mb-3">Histórico de Entradas ({entradas.length})</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                  <tr>
+                    <th className="p-2.5">Data</th>
+                    <th className="p-2.5">Insumo</th>
+                    <th className="p-2.5 text-right">Qtd</th>
+                    <th className="p-2.5 text-right">Total</th>
+                    <th className="p-2.5">Fornecedor / NF</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {entradas.map(e => (
+                    <tr key={e.id}>
+                      <td className="p-2.5 text-slate-500">{e.data}</td>
+                      <td className="p-2.5 font-bold">{e.nome}</td>
+                      <td className="p-2.5 text-right font-bold text-emerald-600">{formatNumber(e.qtd)}</td>
+                      <td className="p-2.5 text-right font-bold">{formatCurrency(e.valor_total)}</td>
+                      <td className="p-2.5 text-slate-500">{e.fornecedor || '-'} (NF: {e.nf || '-'})</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SaidasView({ items, saidas, onUpdate }) {
+      const [codigo, setCodigo] = useState('');
+      const [qtd, setQtd] = useState('');
+      const [destino, setDestino] = useState('Térreo');
+      const [solicitante, setSolicitante] = useState('');
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        const data = tget('data', { items: [], saidas: [], nextSaidaId: 1 });
+        const item = data.items.find(i => i.codigo === codigo);
+        if (!item) return;
+
+        const quantity = parseFloat(qtd) || 0;
+        const newSaida = {
+          id: data.nextSaidaId || 1,
+          data: new Date().toISOString().slice(0, 10),
+          codigo,
+          nome: item.nome,
+          qtd: quantity,
+          valor_unit: item.preco_medio || 0,
+          valor_total: quantity * (item.preco_medio || 0),
+          destino,
+          solicitante
+        };
+
+        data.nextSaidaId = (data.nextSaidaId || 1) + 1;
+        data.saidas.unshift(newSaida);
+        item.saidas_total = (item.saidas_total || 0) + quantity;
+
+        tset('data', data);
+        onUpdate();
+        setQtd(''); setSolicitante('');
+        auditLog('REGISTRAR_SAIDA', `Saída para ${destino} - ${quantity}x ${codigo}`);
+      };
+
+      return (
+        <div className="space-y-6">
+          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">📤 Registrar Saída de Material (Consumo)</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <select value={codigo} onChange={e=>setCodigo(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl sm:col-span-2">
+                <option value="">Selecione o Insumo...</option>
+                {items.map(i => <option key={i.codigo} value={i.codigo}>{i.codigo} — {i.nome} (Saldo: {formatNumber(getSaldo(i))})</option>)}
+              </select>
+              <input type="number" step="0.01" placeholder="Quantidade Solicitada" value={qtd} onChange={e=>setQtd(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input type="text" placeholder="Destino / Pavimento" value={destino} onChange={e=>setDestino(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Solicitante / Encarregado" value={solicitante} onChange={e=>setSolicitante(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs">Confirmar Saída</button>
+          </form>
+
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white mb-3">Histórico de Saídas ({saidas.length})</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                  <tr>
+                    <th className="p-2.5">Data</th>
+                    <th className="p-2.5">Insumo</th>
+                    <th className="p-2.5 text-right">Qtd</th>
+                    <th className="p-2.5">Destino</th>
+                    <th className="p-2.5">Solicitante</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {saidas.map(s => (
+                    <tr key={s.id}>
+                      <td className="p-2.5 text-slate-500">{s.data}</td>
+                      <td className="p-2.5 font-bold">{s.nome}</td>
+                      <td className="p-2.5 text-right font-bold text-blue-600">{formatNumber(s.qtd)}</td>
+                      <td className="p-2.5 font-medium">{s.destino || '-'}</td>
+                      <td className="p-2.5 text-slate-500">{s.solicitante || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function InventarioView({ items, onUpdate }) {
+      const [contagens, setContagens] = useState({});
+
+      const handleAjuste = (item) => {
+        const contada = parseFloat(contagens[item.codigo]);
+        if (isNaN(contada)) return;
+        const saldo = getSaldo(item);
+        const diff = contada - saldo;
+        if (diff === 0) return;
+
+        const data = tget('data', { items: [] });
+        const target = data.items.find(i => i.codigo === item.codigo);
+        if (target) {
+          target.quantidade = (target.quantidade || 0) + diff;
+          tset('data', data);
+          onUpdate();
+          auditLog('AJUSTE_INVENTARIO', `Estoque do item ${item.codigo} ajustado por inventário em ${diff}`);
+        }
+      };
+
+      return (
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <h3 className="font-bold text-sm text-slate-800 dark:text-white">📋 Contagem de Inventário Físico & Ajustes</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                <tr>
+                  <th className="p-2.5">Código</th>
+                  <th className="p-2.5">Insumo</th>
+                  <th className="p-2.5 text-right">Saldo Sistema</th>
+                  <th className="p-2.5 text-center">Qtd Contada</th>
+                  <th className="p-2.5 text-right">Diferença</th>
+                  <th className="p-2.5 text-center">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {items.map(i => {
+                  const saldo = getSaldo(i);
+                  const contada = contagens[i.codigo] !== undefined ? parseFloat(contagens[i.codigo]) : saldo;
+                  const diff = isNaN(contada) ? 0 : contada - saldo;
+
+                  return (
+                    <tr key={i.codigo}>
+                      <td className="p-2.5 font-mono font-bold">{i.codigo}</td>
+                      <td className="p-2.5 font-bold">{i.nome}</td>
+                      <td className="p-2.5 text-right font-black">{formatNumber(saldo)} {i.unidade}</td>
+                      <td className="p-2.5 text-center">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={contagens[i.codigo] !== undefined ? contagens[i.codigo] : saldo}
+                          onChange={e => setContagens({ ...contagens, [i.codigo]: e.target.value })}
+                          className="w-20 p-1 text-center bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold"
+                        />
+                      </td>
+                      <td className="p-2.5 text-right font-bold">
+                        <span className={diff === 0 ? 'text-slate-400' : diff > 0 ? 'text-amber-500' : 'text-red-500'}>
+                          {diff > 0 ? `+${formatNumber(diff)}` : formatNumber(diff)}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <button
+                          onClick={() => handleAjuste(i)}
+                          disabled={diff === 0}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold ${diff === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#0D1F2D] text-[#C9A358]'}`}
+                        >
+                          Ajustar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    function AlertasView({ items, onIrParaEntrada }) {
+      const criticos = items.filter(i => getStatus(i) !== 'OK');
+      return (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">🔔 Alertas de Reposição ({criticos.length})</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {criticos.map(i => (
+              <div key={i.codigo} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-red-200 dark:border-red-900/40 space-y-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="font-mono text-xs text-slate-400">{i.codigo}</span>
+                    <h4 className="font-bold text-sm text-slate-800 dark:text-white">{i.nome}</h4>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-800 uppercase">{getStatus(i)}</span>
+                </div>
+                <div className="text-xs text-slate-500">Saldo Atual: <strong className="text-slate-800 dark:text-white">{formatNumber(getSaldo(i))} {i.unidade}</strong> | Mínimo: {i.estoque_min}</div>
+                <button onClick={() => onIrParaEntrada(i.codigo)} className="w-full py-2 bg-[#0D1F2D] text-[#C9A358] font-bold rounded-xl text-xs">Repor Estoque</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function CQConcretagemView({ cqList, onUpdate }) {
+      const [serie, setSerie] = useState('');
+      const [fase, setFase] = useState('LAJE');
+      const [torre, setTorre] = useState('Torre A');
+      const [local, setLocal] = useState('3º Pavimento - Laje L3');
+      const [qtd, setQtd] = useState('');
+      const [fck, setFck] = useState('30');
+      const [slump, setSlump] = useState('120±20');
+      const [nf, setNf] = useState('');
+      const [concreteira, setConcreteira] = useState('CONCRESERV');
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        const list = tget('cq_concretagem', []);
+        const newItem = {
+          id: Date.now(),
+          serie,
+          data: new Date().toISOString().slice(0, 10),
+          fase,
+          torre,
+          local,
+          qtd: parseFloat(qtd) || 0,
+          fck,
+          slump,
+          nf,
+          concreteira,
+          responsavel: 'Eng. Concretagem'
+        };
+        list.unshift(newItem);
+        tset('cq_concretagem', list);
+        onUpdate();
+        setSerie(''); setQtd('');
+        auditLog('REGISTRAR_CQ', `Concretagem CP ${serie} - ${qtd}m³ FCK ${fck}`);
+      };
+
+      const handleExportPDF = () => {
+        exportCQConcretagemPDF(cqList);
+      };
+
+      return (
+        <div className="space-y-6">
+          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-white">🧪 Lançamento de Concretagem (CQ)</h3>
+              <button type="button" onClick={handleExportPDF} className="px-3 py-1.5 bg-blue-600 text-white font-bold rounded-xl text-xs">📄 Gerar PDF CQ</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <input type="text" placeholder="Série CP (ex: CP-012)" value={serie} onChange={e=>setSerie(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <select value={fase} onChange={e=>setFase(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
+                <option value="LAJE">LAJE</option><option value="PILAR">PILAR</option><option value="BALDRAME">BALDRAME</option><option value="CORTINA">CORTINA</option>
+              </select>
+              <input type="text" placeholder="Local (ex: Laje L3)" value={local} onChange={e=>setLocal(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="number" step="0.01" placeholder="Volume (m³)" value={qtd} onChange={e=>setQtd(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <input type="text" placeholder="FCK (MPa)" value={fck} onChange={e=>setFck(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Slump Test (mm)" value={slump} onChange={e=>setSlump(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Concreteira" value={concreteira} onChange={e=>setConcreteira(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Nº NF" value={nf} onChange={e=>setNf(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <button type="submit" className="px-4 py-2 bg-[#0D1F2D] text-[#C9A358] font-bold rounded-xl text-xs">Salvar Concretagem</button>
+          </form>
+
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white mb-3">Histórico de Concretagens ({cqList.length})</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                  <tr>
+                    <th className="p-2.5">Série CP</th>
+                    <th className="p-2.5">Data</th>
+                    <th className="p-2.5">Fase</th>
+                    <th className="p-2.5">Local</th>
+                    <th className="p-2.5 text-center">FCK</th>
+                    <th className="p-2.5 text-right">Volume (m³)</th>
+                    <th className="p-2.5">Concreteira</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {cqList.map(c => (
+                    <tr key={c.id}>
+                      <td className="p-2.5 font-mono font-bold">{c.serie}</td>
+                      <td className="p-2.5 text-slate-500">{c.data}</td>
+                      <td className="p-2.5 font-bold">{c.fase}</td>
+                      <td className="p-2.5 text-slate-600">{c.local}</td>
+                      <td className="p-2.5 text-center font-bold text-slate-500">{c.fck} MPa</td>
+                      <td className="p-2.5 text-right font-black text-[#C9A358]">{formatNumber(c.qtd)} m³</td>
+                      <td className="p-2.5 text-slate-500">{c.concreteira || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function RelatoriosView({ items, entradas, saidas }) {
+      const [ini, setIni] = useState('');
+      const [fim, setFim] = useState('');
+
+      const allMovs = [
+        ...entradas.map(e => ({ data: e.data, tipo: 'Entrada', codigo: e.codigo, nome: e.nome, qtd: e.qtd, valor_unit: e.valor_unit, valor_total: e.valor_total, fornecedorOuDestino: e.fornecedor })),
+        ...saidas.map(s => ({ data: s.data, tipo: 'Saída', codigo: s.codigo, nome: s.nome, qtd: s.qtd, valor_unit: s.valor_unit, valor_total: s.valor_total, fornecedorOuDestino: s.destino }))
+      ].sort((a,b) => new Date(b.data) - new Date(a.data));
+
+      const handleExcel = () => {
+        exportToExcel('Relatorio_Movimentacoes', 'Movimentacoes', allMovs);
+      };
+
+      const handlePDF = () => {
+        exportReportPDF(allMovs, { ini, fim });
+      };
+
+      return (
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 text-xs">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">📈 Emissão de Relatórios & Exportações</h3>
+            <div className="flex gap-2">
+              <button onClick={handleExcel} className="px-3 py-2 bg-emerald-600 text-white font-bold rounded-xl">📊 Excel</button>
+              <button onClick={handlePDF} className="px-3 py-2 bg-blue-600 text-white font-bold rounded-xl">📄 PDF Formatado</button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto pt-2">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase font-bold text-[10px]">
+                <tr>
+                  <th className="p-2.5">Data</th>
+                  <th className="p-2.5 text-center">Tipo</th>
+                  <th className="p-2.5">Código</th>
+                  <th className="p-2.5">Insumo</th>
+                  <th className="p-2.5 text-right">Qtd</th>
+                  <th className="p-2.5 text-right">Total</th>
+                  <th className="p-2.5">Forn / Destino</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {allMovs.map((m, idx) => (
+                  <tr key={idx}>
+                    <td className="p-2.5 text-slate-500">{m.data}</td>
+                    <td className="p-2.5 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${m.tipo==='Entrada'?'bg-emerald-100 text-emerald-800':'bg-blue-100 text-blue-800'}`}>
+                        {m.tipo}
+                      </span>
+                    </td>
+                    <td className="p-2.5 font-mono font-bold">{m.codigo}</td>
+                    <td className="p-2.5 font-bold">{m.nome}</td>
+                    <td className="p-2.5 text-right font-bold">{formatNumber(m.qtd)}</td>
+                    <td className="p-2.5 text-right font-bold text-[#C9A358]">{formatCurrency(m.valor_total)}</td>
+                    <td className="p-2.5 text-slate-500">{m.fornecedorOuDestino || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    function ObrasView({ obras, activeObra, onSelectObra, onUpdate }) {
+      const [nome, setNome] = useState('');
+      const [cliente, setCliente] = useState('');
+      const [responsavel, setResponsavel] = useState('');
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        const current = JSON.parse(localStorage.getItem('perfort_almox_obras') || '[]');
+        current.unshift({ id: Date.now(), nome, cliente, responsavel, status: 'Ativa' });
+        localStorage.setItem('perfort_almox_obras', JSON.stringify(current));
+        onUpdate(); setNome(''); setCliente('');
+      };
+
+      return (
+        <div className="space-y-4">
+          <form onSubmit={handleAdd} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">🏢 Cadastrar Nova Obra (Multi-Tenant)</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input type="text" placeholder="Nome da Obra (ex: Icon Residence - CC 36)" value={nome} onChange={e=>setNome(e.target.value)} required className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Cliente" value={cliente} onChange={e=>setCliente(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+              <input type="text" placeholder="Eng. Responsável" value={responsavel} onChange={e=>setResponsavel(e.target.value)} className="p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            </div>
+            <button type="submit" className="px-4 py-2 bg-[#0D1F2D] text-[#C9A358] font-bold rounded-xl">Salvar Obra</button>
+          </form>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {obras.map(o => (
+              <div key={o.id} className={`p-5 rounded-2xl border ${activeObra?.id===o.id?'border-[#C9A358] bg-slate-900 text-white ring-2 ring-[#C9A358]/30':'bg-white dark:bg-slate-900'} space-y-3`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-extrabold text-base">{o.nome}</h4>
+                    {o.cliente && <p className="text-xs opacity-75">Cliente: {o.cliente}</p>}
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 uppercase">Ativa</span>
+                </div>
+                <button onClick={() => onSelectObra(o)} className="w-full py-2 bg-[#C9A358] text-[#0D1F2D] font-extrabold rounded-xl text-xs">
+                  {activeObra?.id===o.id ? 'Obra Ativa Em Uso' : 'Selecionar Esta Obra'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function BackupView({ onRestore }) {
+      const handleBackup = () => {
+        const snap = {
+          tenantData: tget('data', {}),
+          cqData: tget('cq_concretagem', []),
+          exportedAt: new Date().toISOString()
+        };
+        const blob = new Blob([JSON.stringify(snap, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `PERFORT_Backup_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+      };
+
+      const handleUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const parsed = JSON.parse(ev.target.result);
+            if (parsed.tenantData) {
+              tset('data', parsed.tenantData);
+              if (parsed.cqData) tset('cq_concretagem', parsed.cqData);
+              alert('Dados restaurados com sucesso!');
+              onRestore();
+            }
+          } catch (err) { alert('Erro no arquivo JSON.'); }
+        };
+        reader.readAsText(file);
+      };
+
+      const auditLogs = JSON.parse(localStorage.getItem('perfort_almox_audit') || '[]');
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 text-xs">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">💾 Backup, Restauração & Auditoria</h3>
+            <div className="flex gap-3">
+              <button onClick={handleBackup} className="px-4 py-2.5 bg-gradient-to-r from-[#C9A358] to-[#b8924a] text-[#0D1F2D] font-extrabold rounded-xl">
+                📥 Baixar Backup JSON
+              </button>
+              <label className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold rounded-xl cursor-pointer">
+                📂 Importar Arquivo JSON
+                <input type="file" accept=".json" onChange={handleUpload} className="hidden" />
+              </label>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-white">📜 Logs de Auditoria de Operações</h3>
+            <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs text-slate-300 space-y-1.5 max-h-60 overflow-y-auto">
+              {auditLogs.map((log, idx) => (
+                <div key={idx} className="flex gap-2 text-[11px]">
+                  <span className="text-slate-500">[{log.timestamp}]</span>
+                  <span className="text-[#C9A358] font-bold">{log.username}</span>
+                  <span className="text-emerald-400">({log.obra}):</span>
+                  <span>{log.action} — {log.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AssistenteIAView({ items }) {
+      const [messages, setMessages] = useState([
+        { role: 'model', text: 'Olá! Sou o Assistente de Engenharia PERFORT ALMOX IA. Como posso ajudar hoje?\n- 🛒 **Sugestão de Compras**\n- 🚨 **Análise de Desperdício**\n- 📊 **Resumo de Estoque**' }
+      ]);
+      const [input, setInput] = useState('');
+
+      const handleSend = (textToSend) => {
+        const txt = textToSend || input;
+        if (!txt.trim()) return;
+        const newMsgs = [...messages, { role: 'user', text: txt }];
+        setMessages(newMsgs);
+        setInput('');
+
+        setTimeout(() => {
+          setMessages([...newMsgs, {
+            role: 'model',
+            text: `### 🛒 Sugestão Inteligente de Compras — PERFORT ALMOX\n\nAnalisando insumos críticos da obra:\n1. **Cimento CP II-F 32 (Saco 50kg)**: Nível Crítico (20 SC em estoque). Recomendado pedido imediato de **300 SC**.\n2. **Luva de Vaqueta Cano Curto**: Estoque zerado. Compra urgente de **50 PAR** para atender NR-18.\n3. **Vergalhão CA-50 12.5mm**: Repor 500 KG para lajes dos próximos pavimentos.`
+          }]);
+        }, 500);
+      };
+
+      return (
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 text-xs max-w-3xl mx-auto">
+          <h3 className="font-bold text-sm text-slate-800 dark:text-white flex items-center gap-2">🤖 Assistente Virtual de Engenharia IA</h3>
+          <div className="flex gap-2">
+            <button onClick={() => handleSend('Sugestão de Compras')} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 font-bold rounded-xl">🛒 Compras</button>
+            <button onClick={() => handleSend('Análise de Desperdício')} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 font-bold rounded-xl">🚨 Desperdício</button>
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-800/80 p-4 rounded-xl space-y-3 min-h-[300px] max-h-[450px] overflow-y-auto">
+            {messages.map((m, idx) => (
+              <div key={idx} className={`p-3 rounded-xl max-w-[85%] ${m.role==='user'?'ml-auto bg-[#0D1F2D] text-white':'bg-white dark:bg-slate-900 border text-slate-800 dark:text-slate-100'}`}>
+                <div className="font-bold mb-1">{m.role==='user'?'Você':'Assistente IA'}</div>
+                <div className="whitespace-pre-line leading-relaxed">{m.text}</div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input type="text" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder="Digite sua dúvida ou solicitação..." className="flex-1 p-2.5 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+            <button onClick={() => handleSend()} className="px-4 py-2.5 bg-[#0D1F2D] text-[#C9A358] font-bold rounded-xl">Enviar</button>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
